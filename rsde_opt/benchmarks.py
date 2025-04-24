@@ -68,3 +68,26 @@ def rosenbrock_function(x: torch.Tensor) -> torch.Tensor:
     """
     xs, ys = x[:, 0], x[:, 1]
     return (1 - xs) ** 2 + 100 * (ys - xs ** 2) ** 2
+
+
+def eggholder_function(x: torch.Tensor) -> torch.Tensor:
+    """
+    Eggholder function.
+
+    Args:
+        x (torch.Tensor): Input tensor of shape (n, 2), where each row is [x_i, y_i].
+
+    Returns:
+        torch.Tensor: Output tensor of shape (n,) containing the Eggholder function
+                      values for each input point.
+    """
+    if x.dim() != 2 or x.shape[1] != 2:
+        raise ValueError(f"Expected input of shape (n, 2), got {tuple(x.shape)}")
+
+    x1 = x[:, 0]
+    x2 = x[:, 1]
+
+    term1 = -(x2 + 47) * torch.sin(torch.sqrt(torch.abs(x1 / 2 + (x2 + 47))))
+    term2 = -x1 * torch.sin(torch.sqrt(torch.abs(x1 - (x2 + 47))))
+
+    return term1 + term2
