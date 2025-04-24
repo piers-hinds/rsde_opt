@@ -4,3 +4,7 @@
 *.pyc
 main.py
 /local_experiments
+
+# VSCode settings
+.vscode/
+.env
