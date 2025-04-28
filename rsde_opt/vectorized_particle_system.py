@@ -51,7 +51,7 @@ class VectorizedParticleSystem:
         
         self.state = self.state.view(self.num_experiments, self.num_particles, self.dim)
         self.t = torch.tensor(0., device=self.device)
-        self.h = torch.tensor(self.step_size, device=self.device)
+        self.h = torch.tensor(self.step_size, device=self.device, dtype=self.state.dtype)
         self.h_sqrt = self.h.sqrt()
 
     def consensus(self) -> torch.Tensor:
@@ -68,7 +68,7 @@ class VectorizedParticleSystem:
         return (weights * self.state).sum(dim=1)
 
     @abstractmethod
-    def step(self, normals: torch.Tensor) -> torch.Tensor:
+    def step(self, normals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Perform one update step for all experiments.
 
@@ -161,11 +161,17 @@ class VecProjectionParticleSystem(VectorizedParticleSystem):
         beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
         sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
-        x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
+        x_bar = self.consensus().unsqueeze(1)
+        delta = self.state - x_bar
 
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
-        self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
-                                                                         self.dim)
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
+
+        proj = self.projection(self.state.view(-1, self.dim))
+        if proj is not None:
+            self.state = proj.view(self.num_experiments,
+                                   self.num_particles,
+                                   self.dim)
 
         self.t += self.h
         return self.state, x_bar.squeeze(1)
@@ -198,10 +204,16 @@ class VecPenaltyParticleSystem(VectorizedParticleSystem):
 
         x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
         current_state = self.state.clone()
-        self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
-                                                                         self.dim)
-        self.state += -beta * (current_state - x_bar) * self.h + sigma * (
-                current_state - x_bar) * normals * self.h_sqrt
+        delta = current_state - x_bar
+        
+        proj = self.projection(self.state.view(-1, self.dim))
+        if proj is not None:
+            self.state = proj.view(self.num_experiments,
+                                   self.num_particles,
+                                   self.dim)
+        
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
 
         self.t += self.h
         return self.state, x_bar.squeeze(1)
@@ -238,19 +250,21 @@ class VecRepellingParticleSystem(VectorizedParticleSystem):
         lambd = torch.as_tensor(self.lambda_func(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
+        delta = self.state - x_bar
 
-        pairwise_diff = self.state.unsqueeze(2) - self.state.unsqueeze(
-            1)
+        pairwise_diff = self.state.unsqueeze(2) - self.state.unsqueeze(1)
         distances = torch.norm(pairwise_diff, dim=-1, keepdim=True).clamp(min=1e-8)
 
-        repulsion_forces = torch.exp(-0.5 * distances ** 2) * pairwise_diff / distances
-        repulsion_sum = repulsion_forces.sum(dim=2)
-        attraction = -beta * (self.state - x_bar)
-        diffusion = sigma * (self.state - x_bar) * normals
-        self.state += (attraction + lambd * repulsion_sum) * self.h + diffusion * self.h_sqrt
+        repulsion_sum = torch.exp(-0.5 * distances**2) * pairwise_diff / distances
+        repulsion_sum = repulsion_sum.sum(dim=2)
 
-        self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
-                                                                         self.dim)
+        self.state.add_(delta, alpha=-beta * self.h)               # attraction
+        self.state.add_(repulsion_sum, alpha=lambd * self.h)          # repulsion
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)  # diffusion
+
+        proj = self.projection(self.state.view(-1, self.dim))
+        if proj is not None:
+            self.state = proj.view(self.num_experiments, self.num_particles, self.dim)
 
         self.t += self.h
         return self.state, x_bar.squeeze(1)
