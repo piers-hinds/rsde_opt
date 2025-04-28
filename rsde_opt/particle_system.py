@@ -110,7 +110,10 @@ class SimpleProjectionParticleSystem(ParticleSystem):
         sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus()
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
+        delta = self.state - x_bar
+
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
@@ -136,12 +139,12 @@ class ProjectionParticleSystem(ParticleSystem):
         x_bar = self.consensus(objective_values=objective_values)
 
         objective_consensus = self.objective(x_bar.unsqueeze(0)).item()
+        mask = (objective_values < objective_consensus).unsqueeze(-1)
+        delta = self.state - x_bar
 
-        drift = torch.where((objective_values < objective_consensus).unsqueeze(-1),
-                            -beta * (self.state - x_bar),
-                            torch.zeros_like(self.state))
+        self.state.add_(delta * mask, alpha=-beta * self.h) 
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
 
-        self.state += drift * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
@@ -165,8 +168,10 @@ class SimplePenaltyParticleSystem(ParticleSystem):
         x_bar = self.consensus()
         current_state = self.state.clone()
         self.projection(self.state)
-        self.state += -beta * (current_state - x_bar) * self.h + sigma * (
-                    current_state - x_bar) * normals * self.h_sqrt
+
+        delta = current_state - x_bar
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
         self.t += self.h
         return self.state, x_bar
 
@@ -191,7 +196,9 @@ class UnconstrainedParticleSystem(ParticleSystem):
         sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus()
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
+        delta = self.state - x_bar
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
         self.t += self.h
         return self.state, x_bar
 
@@ -215,18 +222,19 @@ class RepellingParticleSystem(ParticleSystem):
         lambd = torch.as_tensor(self.lambda_func(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus()
-
-        attraction = -beta * (self.state - x_bar)
+        delta = self.state - x_bar
 
         pairwise_diff = self.state.unsqueeze(1) - self.state.unsqueeze(0)
         distances = torch.norm(pairwise_diff, dim=-1, keepdim=True).clamp(min=1e-8)
+
         repulsion = lambd * torch.sum(
             torch.exp(-0.5 * distances ** 2) * pairwise_diff / distances, dim=1
         )
 
-        diffusion = sigma * (self.state - x_bar)
-
-        self.state += (attraction + repulsion) * self.h + diffusion * normals * self.h_sqrt
+        self.state.add_(delta, alpha=-beta * self.h)
+        self.state.add_(repulsion, alpha=self.h)
+        self.state.addcmul_(delta, normals, value=sigma * self.h_sqrt)
+        
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
