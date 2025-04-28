@@ -108,9 +108,9 @@ class SimpleProjectionParticleSystem(ParticleSystem):
         assert normals.shape == self.state.shape
         beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
         sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
-        
+
         x_bar = self.consensus()
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
+        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
@@ -141,7 +141,7 @@ class ProjectionParticleSystem(ParticleSystem):
                             -beta * (self.state - x_bar),
                             torch.zeros_like(self.state))
 
-        self.state += drift * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
+        self.state += drift * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
@@ -166,7 +166,7 @@ class SimplePenaltyParticleSystem(ParticleSystem):
         current_state = self.state.clone()
         self.projection(self.state)
         self.state += -beta * (current_state - x_bar) * self.h + sigma * (
-                    current_state - x_bar) * normals * self.h.sqrt()
+                    current_state - x_bar) * normals * self.h_sqrt
         self.t += self.h
         return self.state, x_bar
 
@@ -191,7 +191,7 @@ class UnconstrainedParticleSystem(ParticleSystem):
         sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus()
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
+        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
         self.t += self.h
         return self.state, x_bar
 
@@ -226,7 +226,7 @@ class RepellingParticleSystem(ParticleSystem):
 
         diffusion = sigma * (self.state - x_bar)
 
-        self.state += (attraction + repulsion) * self.h + diffusion * normals * self.h.sqrt()
+        self.state += (attraction + repulsion) * self.h + diffusion * normals * self.h_sqrt
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
