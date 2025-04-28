@@ -105,8 +105,10 @@ class SimpleProjectionParticleSystem(ParticleSystem):
 
     @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+        
         x_bar = self.consensus()
         self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
         self.projection(self.state)
@@ -126,8 +128,9 @@ class ProjectionParticleSystem(ParticleSystem):
 
     @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         objective_values = self.objective(self.state)
         x_bar = self.consensus(objective_values=objective_values)
@@ -155,8 +158,10 @@ class SimplePenaltyParticleSystem(ParticleSystem):
     
     @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+
         x_bar = self.consensus()
         current_state = self.state.clone()
         self.projection(self.state)
@@ -181,8 +186,10 @@ class UnconstrainedParticleSystem(ParticleSystem):
 
     @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+
         x_bar = self.consensus()
         self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
         self.t += self.h
@@ -202,9 +209,10 @@ class RepellingParticleSystem(ParticleSystem):
 
     @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
-        lambd = self.lambda_func(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+        lambd = torch.as_tensor(self.lambda_func(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus()
 
