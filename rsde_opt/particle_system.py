@@ -48,19 +48,31 @@ class ParticleSystem:
         self.h = torch.tensor(self.step_size, device=self.device)
         self.h_sqrt = self.h.sqrt()
 
-    def consensus(self, x: torch.Tensor = None) -> torch.Tensor:
+    def consensus(self, 
+                  x: torch.Tensor | None = None, 
+                  objective_values: torch.Tensor | None = None) -> torch.Tensor:
         """
         Compute the weighted consensus point based on particle positions.
 
         Args:
             x (torch.Tensor): Optional tensor of particle positions. If None, uses current state.
+            objective_values (torch.Tensor): Optional tensor of objective values. If None, computes from x.
+                If provided, should match the shape of x.
 
         Returns:
             torch.Tensor: Consensus point.
         """
         if x is None:
             x = self.state
-        objective_values = self.objective(x)
+
+        if objective_values is None:
+            objective_values = self.objective(x)
+
+        if objective_values.shape != (x.shape[0],):
+            raise ValueError(
+                f"objective_values must be a tensor of shape ({x.shape[0],}), "
+                f"but got {tuple(objective_values.shape)}"
+            )
         weights = torch.nn.functional.softmax(-self.alpha * objective_values, dim=0)
         return torch.matmul(weights, x)
 
@@ -116,9 +128,10 @@ class ProjectionParticleSystem(ParticleSystem):
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
-        x_bar = self.consensus()
 
         objective_values = self.objective(self.state)
+        x_bar = self.consensus(objective_values=objective_values)
+
         objective_consensus = self.objective(x_bar.unsqueeze(0)).item()
 
         drift = torch.where((objective_values < objective_consensus).unsqueeze(-1),
