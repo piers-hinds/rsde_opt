@@ -91,6 +91,7 @@ class SimpleProjectionParticleSystem(ParticleSystem):
         super().__init__(*args, **kwargs)
         self.projection = projection
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
@@ -111,6 +112,7 @@ class ProjectionParticleSystem(ParticleSystem):
         super().__init__(*args, **kwargs)
         self.projection = projection
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
@@ -137,7 +139,8 @@ class SimplePenaltyParticleSystem(ParticleSystem):
     def __init__(self, projection: Callable[[torch.Tensor], None], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.projection = projection
-
+    
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
@@ -163,6 +166,7 @@ class UnconstrainedParticleSystem(ParticleSystem):
         self._objective = self.objective
         self.objective = lambda x: self._objective(x) + self.penalty_parameter * self.penalty_function(x)
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
@@ -183,6 +187,7 @@ class RepellingParticleSystem(ParticleSystem):
         self.projection = projection
         self.lambda_func = lambda_func
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> torch.Tensor:
         beta = self.beta(self.t)
         sigma = self.sigma(self.t)
