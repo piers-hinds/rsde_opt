@@ -2,6 +2,8 @@
 *.xml
 *.iml
 *.pyc
+venv/
+.venv/
 main.py
 /local_experiments
 
