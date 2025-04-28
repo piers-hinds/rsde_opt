@@ -42,9 +42,17 @@ class VectorizedParticleSystem:
         Initialize the particle system, setting up the state tensor and time variables.
         """
         self.state = self.initial_state(self.num_experiments * self.num_particles).to(self.device)
+        expected = (self.num_experiments * self.num_particles, self.dim)
+        if self.state.shape != expected:
+            raise ValueError(
+                f"initial_state must return a tensor of shape {expected}, "
+                f"but got {tuple(self.state.shape)}"
+            )
+        
         self.state = self.state.view(self.num_experiments, self.num_particles, self.dim)
         self.t = torch.tensor(0., device=self.device)
         self.h = torch.tensor(self.step_size, device=self.device)
+        self.h_sqrt = self.h.sqrt()
 
     def consensus(self) -> torch.Tensor:
         """
@@ -147,13 +155,15 @@ class VecProjectionParticleSystem(VectorizedParticleSystem):
         super().__init__(*args, **kwargs)
         self.projection = projection
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
 
-        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h.sqrt()
+        self.state += -beta * (self.state - x_bar) * self.h + sigma * (self.state - x_bar) * normals * self.h_sqrt
         self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
                                                                          self.dim)
 
@@ -180,16 +190,18 @@ class VecPenaltyParticleSystem(VectorizedParticleSystem):
         super().__init__(*args, **kwargs)
         self.projection = projection
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
         current_state = self.state.clone()
         self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
                                                                          self.dim)
         self.state += -beta * (current_state - x_bar) * self.h + sigma * (
-                current_state - x_bar) * normals * self.h.sqrt()
+                current_state - x_bar) * normals * self.h_sqrt
 
         self.t += self.h
         return self.state, x_bar.squeeze(1)
@@ -218,10 +230,12 @@ class VecRepellingParticleSystem(VectorizedParticleSystem):
         self.projection = projection
         self.lambda_func = lambda_func
 
+    @torch.inference_mode()
     def step(self, normals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        beta = self.beta(self.t)
-        sigma = self.sigma(self.t)
-        lambd = self.lambda_func(self.t)
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t),  device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+        lambd = torch.as_tensor(self.lambda_func(self.t), device=self.device, dtype=self.state.dtype)
 
         x_bar = self.consensus().unsqueeze(1)  # Shape (num_experiments, 1, dim)
 
@@ -233,7 +247,7 @@ class VecRepellingParticleSystem(VectorizedParticleSystem):
         repulsion_sum = repulsion_forces.sum(dim=2)
         attraction = -beta * (self.state - x_bar)
         diffusion = sigma * (self.state - x_bar) * normals
-        self.state += (attraction + lambd * repulsion_sum) * self.h + diffusion * self.h.sqrt()
+        self.state += (attraction + lambd * repulsion_sum) * self.h + diffusion * self.h_sqrt
 
         self.state = self.projection(self.state.view(-1, self.dim)).view(self.num_experiments, self.num_particles,
                                                                          self.dim)
