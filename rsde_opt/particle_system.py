@@ -35,9 +35,18 @@ class ParticleSystem:
     device: str = 'cpu'
 
     def __post_init__(self):
-        self.state = self.initial_state(self.num_particles).to(self.device)
+        state = self.initial_state(self.num_particles).to(self.device)
+        expected = (self.num_particles, self.dim)
+        if state.shape != expected:
+            raise ValueError(
+                f"initial_state must return a tensor of shape {expected}, "
+                f"but got {tuple(state.shape)}"
+            )
+        
+        self.state = state
         self.t = torch.tensor(0., device=self.device)
         self.h = torch.tensor(self.step_size, device=self.device)
+        self.h_sqrt = self.h.sqrt()
 
     def consensus(self, x: torch.Tensor = None) -> torch.Tensor:
         """

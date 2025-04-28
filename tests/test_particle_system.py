@@ -43,6 +43,18 @@ def example_simple_proj_particle_system():
 def test_particle_system_init(example_proj_particle_system):
     assert example_proj_particle_system.state.shape == (example_proj_particle_system.num_particles,
                                                         example_proj_particle_system.dim)
+    
+def test_particle_system_shape_error():
+    with pytest.raises(ValueError, match="tensor of shape"):
+        SimpleProjectionParticleSystem(objective=lambda x: torch.sum(x ** 2, dim=1),
+                                        projection=lambda x: x,
+                                        initial_state=lambda n: torch.zeros(n, ),
+                                        alpha=1,
+                                        beta=lambda x: 1,
+                                        sigma=lambda x: 4,
+                                        dim=2,
+                                        num_particles=5,
+                                        step_size=0.01)
 
 
 def test_particle_system_consensus(example_proj_particle_system):
