@@ -268,3 +268,58 @@ class VecRepellingParticleSystem(VectorizedParticleSystem):
 
         self.t += self.h
         return self.state, x_bar.squeeze(1)
+
+
+class VecMomentumParticleSystem(VectorizedParticleSystem):
+    """
+    Vectorised particle system with heavy-ball momentum.
+
+    Extra parameters
+    ----------------
+    gamma : float | Callable[[torch.Tensor], torch.Tensor]
+        Damping factor (0 → no momentum; may be time-dependent).
+    projection : Callable[[torch.Tensor], None | torch.Tensor] | None
+        Optional hard-constraint operator applied after each update.
+    """
+
+    def __init__(
+        self,
+        gamma: float | Callable[[torch.Tensor], torch.Tensor],
+        projection: Callable[[torch.Tensor], None] | None = None,
+        *args, **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.gamma = (lambda _: gamma) if isinstance(gamma, float) else gamma
+        self.projection = projection
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.velocity = torch.zeros_like(self.state, requires_grad=False)
+
+    @torch.inference_mode()
+    def step(self, normals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        assert normals.shape == self.state.shape
+        beta = torch.as_tensor(self.beta(self.t), device=self.device, dtype=self.state.dtype)
+        sigma = torch.as_tensor(self.sigma(self.t), device=self.device, dtype=self.state.dtype)
+        gamma = torch.as_tensor(self.gamma(self.t), device=self.device, dtype=self.state.dtype)
+
+        x_bar = self.consensus().unsqueeze(1)
+        delta = self.state - x_bar
+
+        self.velocity.mul_(gamma)
+        self.velocity.add_(delta, alpha=-beta * self.h)
+        self.velocity.addcmul_(delta, normals, value=sigma * self.h_sqrt)
+
+        self.state.add_(self.velocity)
+
+        if self.projection is not None:
+            out = self.projection(self.state.view(-1, self.dim))
+            if out is not None:
+                self.state = out.view(self.num_experiments, self.num_particles, self.dim)
+
+        self.t += self.h
+        return self.state, x_bar.squeeze(1)
+
+    def reset(self):
+        super().reset()
+        self.velocity.zero_()
