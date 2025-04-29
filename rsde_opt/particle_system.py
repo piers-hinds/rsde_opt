@@ -238,3 +238,58 @@ class RepellingParticleSystem(ParticleSystem):
         self.projection(self.state)
         self.t += self.h
         return self.state, x_bar
+    
+
+class MomentumParticleSystem(ParticleSystem):
+    """
+    Adds a velocity term v and Nesterov-style momentum.
+
+    Args
+    ----
+    gamma : float or Callable[[torch.Tensor], torch.Tensor]
+        Damping (0 =no momentum, 1 =undamped).  May be time-dependent.
+    projection : optional hard-projection callable (same contract as before).
+    """
+
+    def __init__(self,
+                 gamma: Callable[[torch.Tensor], torch.Tensor] | float,
+                 projection: Callable[[torch.Tensor], None] | None = None,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.gamma = (lambda t: gamma) if isinstance(gamma, float) else gamma
+        self.projection = projection
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.velocity = torch.zeros_like(self.state, requires_grad=False)
+
+    @torch.inference_mode()
+    def step(self, normals: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        assert normals.shape == self.state.shape
+
+        beta   = torch.as_tensor(self.beta(self.t),   device=self.device, dtype=self.state.dtype)
+        sigma  = torch.as_tensor(self.sigma(self.t),  device=self.device, dtype=self.state.dtype)
+        gamma  = torch.as_tensor(self.gamma(self.t),  device=self.device, dtype=self.state.dtype)
+
+        x_bar  = self.consensus()          # (d,)
+        delta  = self.state - x_bar        # (N,d)
+
+        self.velocity.mul_(gamma)
+        self.velocity.add_(delta,  alpha=-beta * self.h)
+        self.velocity.addcmul_(delta, normals,
+                               value = sigma * self.h_sqrt)
+
+        self.state.add_(self.velocity)
+
+        # optional hard projection
+        if self.projection is not None:
+            out = self.projection(self.state)
+            if out is not None:
+                self.state = out
+
+        self.t += self.h
+        return self.state, x_bar
+
+    def reset(self):
+        super().reset()
+        self.velocity.zero_()
